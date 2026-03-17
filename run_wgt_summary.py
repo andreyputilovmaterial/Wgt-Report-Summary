@@ -32,7 +32,10 @@ def safe_convert_txt(c):
     return f'{c}'
 
 def safe_escape_quotes_csv(c):
-    return safe_convert_txt(c).replace('"','""')
+    c = safe_convert_txt(c).replace('"','""')
+    if c.startswith('-'):
+        c = '\''+c
+    return c
 
 
 def is_html_layout_dumpster(html):

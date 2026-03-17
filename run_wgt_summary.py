@@ -84,7 +84,7 @@ def read_txt(filename,config={}):
 
 def parse_log(lines,config={}):
 
-    Record = namedtuple("Record",['filter','weight_var','matrix_vars','status','rim_limit','summary_table','unw_base','wgt_base'])
+    Record = namedtuple("Record",['filter','weight_var','matrix_vars','status','rim_limit','summary_table','unw_base','wgt_base','weighting_efficiency'])
 
     def clean_summary_outputs_value(d):
         return 0 if d == '------' else float('nan') if d == '-nan(ind)' else float(d)
@@ -96,6 +96,7 @@ def parse_log(lines,config={}):
     rms = None
     unw_base = None
     wgt_base = None
+    weighting_efficiency = None
     is_within_summary_table = False
     summary_table = None
     summary_curr_table_var_index = None
@@ -117,6 +118,7 @@ def parse_log(lines,config={}):
                     summary_table = summary_table,
                     unw_base = unw_base,
                     wgt_base = wgt_base,
+                    weighting_efficiency = weighting_efficiency,
                 ))
             current_group_wgt_filter = m.group(1)
             has_error = False
@@ -140,6 +142,10 @@ def parse_log(lines,config={}):
         m = re.match(r'^\s*?Weight var:\s*(.*)', line, flags=re.I)
         if m:
             weight_var = m.group(1)
+
+        m = re.match(r'^\s*?Rim weighting efficiency\s*(.*)', line, flags=re.I)
+        if m:
+            weighting_efficiency = m.group(1)
 
         if is_within_summary_table:
             m = re.match(r'^\s*?(------|\d+(?:\.\d+)?|-nan\(ind\))\s*?\t\s*?(------|\d+(?:\.\d+)?|-nan\(ind\))\s*?\t\s*?(------|\d+(?:\.\d+)?|-nan\(ind\))\s*?\t\s*?(------|\d+(?:\.\d+)?|-nan\(ind\))\s*?$', line, re.I)
@@ -192,23 +198,25 @@ def parse_log(lines,config={}):
             summary_table = summary_table,
             unw_base = unw_base,
             wgt_base = wgt_base,
+            weighting_efficiency = weighting_efficiency,
         ))
 
     return results
 
 def write_results(report_fname,results,config={}):
     with open(report_fname, "w", encoding="utf-8") as out:
-        out.write('"Filter","Weight var","Status","Rim Limit","Impossible","Extreme"\n')
-        for filter, weight_var, matrix_vars, status, rim_limit, summary_table, unw_base, wgt_base in results:
+        out.write('"Filter","Weight var","Status","Rim Limit","Weighting Efficiency","Impossible","Extreme"\n')
+        for filter, weight_var, matrix_vars, status, rim_limit, summary_table, unw_base, wgt_base, weighting_efficiency in results:
             bad_rows = [ r for r in summary_table if math.isnan(r[6]) ] if summary_table is not None else ('Exception: no table parsed',-2)
             extreme_rows = [ r for r in summary_table if not math.isnan(r[6]) and not ( (r[6]>.32) and (r[6]<3.2) ) ] if summary_table is not None else ('Exception: no table parsed',-2)
-            out.write('"{cell1}","{cell2}","{cell3}","{cell4}","{cell5}","{cell6}"\n'.format(
+            out.write('"{cell1}","{cell2}","{cell3}","{cell4}","{cell5}","{cell6}","{cell7}"\n'.format(
                 cell1 = safe_escape_quotes_csv(filter),
                 cell2 = safe_escape_quotes_csv(weight_var),
                 cell3 = safe_escape_quotes_csv(status),
                 cell4 = safe_escape_quotes_csv(rim_limit if rim_limit is None else '{xxx} x {nnn}n = {rms}'.format(rms=safe_round(rim_limit),nnn=safe_round(unw_base),xxx=safe_round(safe_math_op_div(rim_limit,unw_base)))),
-                cell5 = safe_escape_quotes_csv(', '.join([ '{v} / Cell{n} ({m2}% -> {m4}%)'.format(v=r[0],n=r[1]+1 if r[1]>=0 else '#Other',m2=r[3],m4=r[5]) for r in bad_rows ])),
-                cell6 = safe_escape_quotes_csv(', '.join([ '{v} / Cell{n} ({m2}% -> {m4}% = {ratio}x)'.format(v=r[0],n=r[1]+1 if r[1]>=0 else '#Other',m2=r[3],m4=r[5],ratio=r[6]) for r in extreme_rows ])),
+                cell5 = safe_escape_quotes_csv(weighting_efficiency),
+                cell6 = safe_escape_quotes_csv(', '.join([ '{v} / Cell{n} ({m2}% -> {m4}%)'.format(v=r[0],n=r[1]+1 if r[1]>=0 else '#Other',m2=r[3],m4=r[5]) for r in bad_rows ])),
+                cell7 = safe_escape_quotes_csv(', '.join([ '{v} / Cell{n} ({m2}% -> {m4}% = {ratio}x)'.format(v=r[0],n=r[1]+1 if r[1]>=0 else '#Other',m2=r[3],m4=r[5],ratio=r[6]) for r in extreme_rows ])),
             ))
     
 

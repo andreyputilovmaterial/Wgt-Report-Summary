@@ -219,7 +219,7 @@ def write_results(report_fname,results,config={}):
                 cell4 = safe_escape_quotes_csv(rim_limit if rim_limit is None else '{xxx} x {nnn}n = {rms}'.format(rms=safe_round(rim_limit),nnn=safe_round(unw_base),xxx=safe_round(safe_math_op_div(rim_limit,unw_base)))),
                 cell5 = safe_escape_quotes_csv(weighting_efficiency),
                 cell6 = safe_escape_quotes_csv(', '.join([ '{v} / Cell{n} ({m2}% -> {m4}%)'.format(v=r[0],n=r[1]+1 if r[1]>=0 else '#Other',m2=r[3],m4=r[5]) for r in bad_rows ])),
-                cell7 = safe_escape_quotes_csv(', '.join([ '{v} / Cell{n} ({m2}% -> {m4}% = {ratio}x)'.format(v=r[0],n=r[1]+1 if r[1]>=0 else '#Other',m2=r[3],m4=r[5],ratio=r[6]) for r in extreme_rows ])),
+                cell7 = safe_escape_quotes_csv(', '.join([ '{v} / Cell{n} ({m2}% -> {m4}% = {ratio}x)'.format(v=r[0],n=r[1]+1 if r[1]>=0 else '#Other',m2=r[3],m4=r[5],ratio=safe_round(r[6])) for r in extreme_rows ])),
             ))
     
 

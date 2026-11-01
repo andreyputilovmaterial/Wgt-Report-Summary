@@ -85,13 +85,16 @@ def test_write_results_default_seven_columns(tmp_path):
                                    '"Weighting Efficiency"', '"Impossible"', '"Extreme"']
 
 
-def test_write_results_no_summary_table_does_not_crash(tmp_path):
+def test_write_results_no_summary_table_leaves_cells_empty(tmp_path):
     out = tmp_path / "out.csv"
     results = [_make_result(summary_table=None)]
     rws.write_results(str(out), results, {"input_filename": str(tmp_path / "x.htm"), "options": {}})
-    text = out.read_text(encoding="utf-8")
-    # Regression: this used to crash while iterating a fallback tuple.
-    assert "Exception: no table parsed" in text
+    lines = out.read_text(encoding="utf-8").splitlines()
+    # Regression: this used to crash while iterating a fallback tuple; now it
+    # just leaves the Impossible/Extreme cells empty.
+    assert len(lines) == 2  # header + one data row
+    assert lines[1].endswith(',"",""')
+    assert "Exception: no table parsed" not in lines[1]
 
 
 def test_write_results_impossible_and_extreme(tmp_path):

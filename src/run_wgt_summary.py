@@ -299,8 +299,10 @@ def write_results(report_fname: str, results: List[Record], config: Optional[dic
             ))
         for wgt_filter, weight_var, matrix_vars, status, rim_limit, summary_table, unw_base, wgt_base, weighting_efficiency in results:
             if summary_table is None:
-                impossible_txt = 'Exception: no table parsed'
-                extreme_txt = 'Exception: no table parsed'
+                # No summary table: leave both cells empty (they hold
+                # comma-separated lists, and an empty list == empty cell).
+                impossible_txt = ''
+                extreme_txt = ''
             else:
                 bad_rows = [ r for r in summary_table if math.isnan(r[6]) ]
                 extreme_rows = [ r for r in summary_table if not math.isnan(r[6]) and not ( (r[6]>.32) and (r[6]<3.2) ) ]

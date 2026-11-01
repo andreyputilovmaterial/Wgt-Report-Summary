@@ -48,8 +48,8 @@ adjusting, and which cells were "impossible" (zero -> non-zero) or "extreme"
   The sample `Weight_Report_DE.htm` now lives only in `tests-real-sensitive-data/`
   (gitignored) and must never be merged into `main`.
 - **Empty/degenerate summary tables must not crash**: when no summary table is
-  parsed, the `Impossible`/`Extreme` columns now emit `Exception: no table parsed`
-  instead of iterating a malformed fallback tuple.
+  parsed, the `Impossible`/`Extreme` cells are left empty (an empty list, not a
+  placeholder) instead of iterating a malformed fallback tuple.
 - **Robust to degenerate/invalid input**: `clean_summary_outputs_value` returns
   NaN instead of raising on an unparseable value, and a missing `Matrix vars:`
   line no longer crashes `parse_log` (cells fall back to `???`).

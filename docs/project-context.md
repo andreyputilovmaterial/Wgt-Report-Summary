@@ -53,6 +53,13 @@ adjusting, and which cells were "impossible" (zero -> non-zero) or "extreme"
 - **Robust to degenerate/invalid input**: `clean_summary_outputs_value` returns
   NaN instead of raising on an unparseable value, and a missing `Matrix vars:`
   line no longer crashes `parse_log` (cells fall back to `???`).
+- **Issue #1 root cause (crash)**: a weighting filter with *no* summary table
+  (e.g. a failed rim with no `Input frequency` table) used to make `write_results`
+  fall back to the 2-element tuple `('Exception: no table parsed', -2)`, which it
+  then iterated as if it were a list of rows — so `r[1]` became the character
+  `'x'` and `r[1] >= 0` raised `TypeError: '>=' not supported between instances
+  of 'str' and 'int'`. Fixed on both `main` and `experimental`: leave
+  `Impossible`/`Extreme` cells empty when `summary_table is None`.
 - **Realistic anonymized fixture**: `tests/fixtures/dummy_weight_report.htm` is
   derived from the real report by replacing variable names and permuting every
   digit (same format/width, different values), so tests exercise the real layout

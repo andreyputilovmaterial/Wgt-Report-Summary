@@ -97,6 +97,32 @@ def test_write_results_no_summary_table_leaves_cells_empty(tmp_path):
     assert "Exception: no table parsed" not in lines[1]
 
 
+def test_read_parse_write_filter_without_summary_table_does_not_crash(tmp_path):
+    # End-to-end regression for issue #1: a weighting filter with no summary
+    # table (e.g. a failed rim) used to crash write_results with
+    # "TypeError: '>=' not supported between instances of 'str' and 'int'".
+    html = tmp_path / "Weight_Report.htm"
+    html.write_text(
+        "<html><body>"
+        "<P>Weighting filter: F1<BR>"
+        "Weight var: Weight_Completes<BR>"
+        "Matrix vars: A B<BR>"
+        "failure on rims<BR>"
+        "</body></html>",
+        encoding="utf-8",
+    )
+    lines = rws.read_html(str(html), {})
+    results = rws.parse_log(lines, {})
+    assert len(results) == 1
+    assert results[0].summary_table is None
+
+    out = tmp_path / "out.csv"
+    rws.write_results(str(out), results, {"input_filename": str(html), "options": {}})
+    rows = out.read_text(encoding="utf-8").splitlines()
+    assert len(rows) == 2  # header + one data row
+    assert rows[1].endswith(',"",""')
+
+
 def test_write_results_impossible_and_extreme(tmp_path):
     out = tmp_path / "out.csv"
     table = [
@@ -109,6 +135,25 @@ def test_write_results_impossible_and_extreme(tmp_path):
     text = out.read_text(encoding="utf-8")
     assert "VAR / Cell1 (10.00% -> 8.00%)" in text
     assert "VAR / Cell3 (40.00% -> 50.00% = 3.50x)" in text
+
+
+def test_safe_is_nonnegative_number():
+    assert rws.safe_is_nonnegative_number(0) is True
+    assert rws.safe_is_nonnegative_number(17) is True
+    assert rws.safe_is_nonnegative_number(-1000) is False
+    assert rws.safe_is_nonnegative_number("17") is True
+    assert rws.safe_is_nonnegative_number("unexpected") is False
+    assert rws.safe_is_nonnegative_number(None) is False
+
+
+def test_write_results_non_numeric_cell_index_does_not_crash(tmp_path):
+    out = tmp_path / "out.csv"
+    table = [_summary_row("VAR", "unexpected", "100.000", "0.00", "80.000", "8.00", math.nan)]
+    results = [_make_result(wgt_filter="F", summary_table=table)]
+    rws.write_results(str(out), results, {"input_filename": str(tmp_path / "x.htm"), "options": {}})
+    text = out.read_text(encoding="utf-8")
+    # A non-numeric cell index must fall back to '#Other' instead of raising.
+    assert "VAR / Cell#Other (0.00% -> 8.00%)" in text
 
 
 def test_write_results_append_writes_header_once(tmp_path):

@@ -59,6 +59,18 @@ def safe_convert_txt(c: Any) -> str:
     return f'{c}'
 
 
+def safe_is_nonnegative_number(c: Any) -> bool:
+    """Return True if ``c`` is a non-negative number, False otherwise.
+
+    Never raises: guards the summary-cell index comparison so an unexpected
+    non-numeric value falls back to ``#Other`` instead of crashing.
+    """
+    try:
+        return float(c) >= 0
+    except (TypeError, ValueError):
+        return False
+
+
 def safe_escape_quotes_csv(c: Any) -> str:
     """Escape a value for a CSV cell.
 
@@ -306,8 +318,8 @@ def write_results(report_fname: str, results: List[Record], config: Optional[dic
             else:
                 bad_rows = [ r for r in summary_table if math.isnan(r[6]) ]
                 extreme_rows = [ r for r in summary_table if not math.isnan(r[6]) and not ( (r[6]>.32) and (r[6]<3.2) ) ]
-                impossible_txt = ', '.join([ '{v} / Cell{n} ({m2}% -> {m4}%)'.format(v=r[0],n=r[1]+1 if r[1]>=0 else '#Other',m2=r[3],m4=r[5]) for r in bad_rows ])
-                extreme_txt = ', '.join([ '{v} / Cell{n} ({m2}% -> {m4}% = {ratio}x)'.format(v=r[0],n=r[1]+1 if r[1]>=0 else '#Other',m2=r[3],m4=r[5],ratio=safe_round(r[6])) for r in extreme_rows ])
+                impossible_txt = ', '.join([ '{v} / Cell{n} ({m2}% -> {m4}%)'.format(v=r[0],n=r[1]+1 if safe_is_nonnegative_number(r[1]) else '#Other',m2=r[3],m4=r[5]) for r in bad_rows ])
+                extreme_txt = ', '.join([ '{v} / Cell{n} ({m2}% -> {m4}% = {ratio}x)'.format(v=r[0],n=r[1]+1 if safe_is_nonnegative_number(r[1]) else '#Other',m2=r[3],m4=r[5],ratio=safe_round(r[6])) for r in extreme_rows ])
             out.write('{cols_prepend}"{cell1}","{cell2}","{cell3}","{cell4}","{cell5}","{cell6}","{cell7}"\n'.format(
                 cols_prepend = row_prepend,
                 cell1 = safe_escape_quotes_csv(wgt_filter),

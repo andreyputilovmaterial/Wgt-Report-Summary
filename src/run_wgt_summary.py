@@ -1,44 +1,78 @@
+"""Summarize HTML weighting reports into a compact CSV.
+
+Parses an HTML report produced by the Unicom/IBM Professional weighting tool
+and writes a CSV summary (one row per weighting group/filter), highlighting
+failed groups and "impossible" (zero -> non-zero) or "extreme" cells.
+"""
+
 import re
 import argparse
 from pathlib import Path
-import traceback, sys # for error reporting - to print to stderr
-from bs4 import BeautifulSoup, NavigableString
+import traceback, sys  # for error reporting - to print to stderr
 import math
-from datetime import date, datetime
+from datetime import datetime
 from collections import namedtuple
+from typing import Any, Iterable, Iterator, List, Optional, Union
+
+from bs4 import BeautifulSoup, NavigableString
 
 
-def make_output_name(fname,config={}):
-    # today_americanstyle_str = date.today().strftime('%m.%d.%Y')
+# One parsed weighting group/filter.
+Record = namedtuple(
+    "Record",
+    ['wgt_filter', 'weight_var', 'matrix_vars', 'status', 'rim_limit',
+     'summary_table', 'unw_base', 'wgt_base', 'weighting_efficiency'],
+)
+
+
+def make_output_name(fname: str, config: Optional[dict] = None) -> str:
+    """Build the default output CSV name for an input report.
+
+    Uses the input stem plus an ``MM.DD.YYYY`` timestamp from the run start time.
+    """
+    if config is None:
+        config = {}
     today_americanstyle_str = config['time_start'].strftime('%m.%d.%Y')
     p = Path(fname)
     report_fname = p.with_stem(f"{p.stem}-summary-{today_americanstyle_str}").with_suffix('.csv')
     return safe_escape_quotes_csv(report_fname)
 
 
-def safe_math_op_div(a,b):
+def safe_math_op_div(a: Any, b: Any) -> Union[float, str]:
+    """Divide ``a`` by ``b``, returning the error text instead of raising."""
     try:
         return float(a) / float(b)
     except Exception as e:
         return safe_convert_txt(e)
 
-def safe_round(c):
+
+def safe_round(c: Any) -> str:
+    """Format a value to two decimals, falling back to its text form."""
     try:
         return f'{c:.2f}'
-    except:
+    except Exception:
         return safe_convert_txt(c)
 
-def safe_convert_txt(c):
+
+def safe_convert_txt(c: Any) -> str:
+    """Coerce any value to its string form."""
     return f'{c}'
 
-def safe_escape_quotes_csv(c):
+
+def safe_escape_quotes_csv(c: Any) -> str:
+    """Escape a value for a CSV cell.
+
+    Doubles embedded double-quotes and prefixes a leading dash with an
+    apostrophe (a workaround for Excel treating a leading ``-`` as a formula).
+    """
     c = safe_convert_txt(c).replace('"','""')
     if c.startswith('-'):
         c = '\''+c
     return c
 
 
-def is_html_layout_dumpster(html):
+def is_html_layout_dumpster(html: str) -> bool:
+    """Return True if the report has the broken multi-body layout we must fix."""
     body_tags = re.findall(r'<\s*?body\b.*?>',html,flags=re.I)
     if len(body_tags)>1:
         return True
@@ -46,10 +80,18 @@ def is_html_layout_dumpster(html):
         return True
     return False
 
-def fix_wgt_report_html(html):
+
+def fix_wgt_report_html(html: str) -> str:
+    """Wrap broken report HTML in one body and rename nested html/body/head tags."""
     return '<html><body style="background: #6699cc;">'+re.sub(r'(<\s*?/?\s*?)((?:html|body|head))',lambda m: f'{m[1]}SECTION{m[2]}',html,flags=re.I)+'</body></html>'
 
-def read_html(filename,config={}):
+
+def read_html(filename: str, config: Optional[dict] = None) -> List[str]:
+    """Read a report file and normalize it into text lines.
+
+    Collapses whitespace, repairs the broken layout when needed, converts each
+    ``<tr>`` into a tab-separated row, and returns the resulting lines.
+    """
     with open(filename, "r", encoding="utf-8") as f:
         contents = f.read()
         if is_html_layout_dumpster(contents):
@@ -60,37 +102,36 @@ def read_html(filename,config={}):
             converted_str = ''
             for cell_num, td in enumerate(tr.find_all(['td','th'])):
                 converted_str += ('\t' if cell_num>0 else '') + td.get_text(strip=True)
-            # converted_str += '\n'
             tr.replace_with(NavigableString(converted_str))
-            converted_str = converted_str
         text = soup.get_text("\n")
         return text.splitlines()
 
 
-
-def read_txt(filename,config={}):
-    # results = []
-
+def read_txt(filename: str, config: Optional[dict] = None) -> Iterator[str]:
+    """Yield lines from a text file (kept for completeness; reports are HTML)."""
     try:
         with open(filename, "r", encoding="utf-8") as f:
             for line in f:
-                # line = line.strip()
-                # results.append(line)
                 yield line
-
     except FileNotFoundError as e:
         raise e
 
-    # return results
 
-
-
-def parse_log(lines,config={}):
-
-    Record = namedtuple("Record",['filter','weight_var','matrix_vars','status','rim_limit','summary_table','unw_base','wgt_base','weighting_efficiency'])
-
+def parse_log(lines: Iterable[str], config: Optional[dict] = None) -> List[Record]:
+    """Parse normalized report lines into one ``Record`` per weighting filter."""
     def clean_summary_outputs_value(d):
-        return 0 if d == '------' else float('nan') if d == '-nan(ind)' else float(d)
+        if d == '------':
+            return 0
+        if d == '-nan(ind)':
+            return float('nan')
+        # The summary-table regex only admits numbers, dashes and -nan(ind), but
+        # stay defensive: an unparseable value becomes NaN (an "Impossible" row)
+        # rather than crashing the whole run.
+        try:
+            return float(d)
+        except (ValueError, TypeError):
+            return float('nan')
+
 
     current_group_wgt_filter = None
     matrix_vars = None
@@ -113,7 +154,7 @@ def parse_log(lines,config={}):
         if m:
             if current_group_wgt_filter:
                 results.append(Record(
-                    filter = current_group_wgt_filter,
+                    wgt_filter = current_group_wgt_filter,
                     weight_var = weight_var,
                     matrix_vars = matrix_vars,
                     status = "FAILED" if has_error else "OK",
@@ -156,7 +197,7 @@ def parse_log(lines,config={}):
                 the_var = '???'
                 try:
                     the_var = matrix_vars[summary_curr_table_var_index]
-                except IndexError:
+                except (IndexError, TypeError):
                     the_var = '???'
                 perc_inp = clean_summary_outputs_value(m.group(2))
                 perc_proj = clean_summary_outputs_value(m.group(4))
@@ -193,7 +234,7 @@ def parse_log(lines,config={}):
 
     if current_group_wgt_filter:
         results.append(Record(
-            filter = current_group_wgt_filter,
+            wgt_filter = current_group_wgt_filter,
             weight_var = weight_var,
             matrix_vars = matrix_vars,
             status = "FAILED" if has_error else "OK",
@@ -206,7 +247,15 @@ def parse_log(lines,config={}):
 
     return results
 
-def write_results(report_fname,results,config={}):
+def write_results(report_fname: str, results: List[Record], config: Optional[dict] = None) -> None:
+    """Write parsed records to a CSV summary file.
+
+    Honors ``options.out_append`` (append instead of overwrite, header only when
+    new/empty) and ``options.out_reportfile_stats`` (prepend ``Report File`` and
+    ``Last Edited`` columns).
+    """
+    if config is None:
+        config = {}
     options = config.get('options', {})
     out_append = bool(options.get('out_append'))
     out_reportfile_stats = bool(options.get('out_reportfile_stats'))
@@ -248,23 +297,30 @@ def write_results(report_fname,results,config={}):
                 cell6 = safe_escape_quotes_csv('Impossible'),
                 cell7 = safe_escape_quotes_csv('Extreme'),
             ))
-        for filter, weight_var, matrix_vars, status, rim_limit, summary_table, unw_base, wgt_base, weighting_efficiency in results:
-            bad_rows = [ r for r in summary_table if math.isnan(r[6]) ] if summary_table is not None else ('Exception: no table parsed',-2)
-            extreme_rows = [ r for r in summary_table if not math.isnan(r[6]) and not ( (r[6]>.32) and (r[6]<3.2) ) ] if summary_table is not None else ('Exception: no table parsed',-2)
+        for wgt_filter, weight_var, matrix_vars, status, rim_limit, summary_table, unw_base, wgt_base, weighting_efficiency in results:
+            if summary_table is None:
+                impossible_txt = 'Exception: no table parsed'
+                extreme_txt = 'Exception: no table parsed'
+            else:
+                bad_rows = [ r for r in summary_table if math.isnan(r[6]) ]
+                extreme_rows = [ r for r in summary_table if not math.isnan(r[6]) and not ( (r[6]>.32) and (r[6]<3.2) ) ]
+                impossible_txt = ', '.join([ '{v} / Cell{n} ({m2}% -> {m4}%)'.format(v=r[0],n=r[1]+1 if r[1]>=0 else '#Other',m2=r[3],m4=r[5]) for r in bad_rows ])
+                extreme_txt = ', '.join([ '{v} / Cell{n} ({m2}% -> {m4}% = {ratio}x)'.format(v=r[0],n=r[1]+1 if r[1]>=0 else '#Other',m2=r[3],m4=r[5],ratio=safe_round(r[6])) for r in extreme_rows ])
             out.write('{cols_prepend}"{cell1}","{cell2}","{cell3}","{cell4}","{cell5}","{cell6}","{cell7}"\n'.format(
                 cols_prepend = row_prepend,
-                cell1 = safe_escape_quotes_csv(filter),
+                cell1 = safe_escape_quotes_csv(wgt_filter),
                 cell2 = safe_escape_quotes_csv(weight_var),
                 cell3 = safe_escape_quotes_csv(status),
                 cell4 = safe_escape_quotes_csv(rim_limit if rim_limit is None else '{xxx} x {nnn}n = {rms}'.format(rms=safe_round(rim_limit),nnn=safe_round(unw_base),xxx=safe_round(safe_math_op_div(rim_limit,unw_base)))),
                 cell5 = safe_escape_quotes_csv(weighting_efficiency),
-                cell6 = safe_escape_quotes_csv(', '.join([ '{v} / Cell{n} ({m2}% -> {m4}%)'.format(v=r[0],n=r[1]+1 if r[1]>=0 else '#Other',m2=r[3],m4=r[5]) for r in bad_rows ])),
-                cell7 = safe_escape_quotes_csv(', '.join([ '{v} / Cell{n} ({m2}% -> {m4}% = {ratio}x)'.format(v=r[0],n=r[1]+1 if r[1]>=0 else '#Other',m2=r[3],m4=r[5],ratio=safe_round(r[6])) for r in extreme_rows ])),
+                cell6 = safe_escape_quotes_csv(impossible_txt),
+                cell7 = safe_escape_quotes_csv(extreme_txt),
             ))
     
 
 
-def main():
+def main() -> None:
+    """CLI entry point: parse args, read one report, and write the summary CSV."""
     try:
         time_start = datetime.now()
         parser = argparse.ArgumentParser(

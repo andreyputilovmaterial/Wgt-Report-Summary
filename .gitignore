@@ -205,3 +205,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Weighting tool report files (inputs / examples - not part of the repo)
+Weight_*.htm*
+
+# Real / sensitive test data (never commit)
+tests-real-sensitive-data/

@@ -3,7 +3,7 @@ The script designed to give you a summary of what happened in weighting, in one 
 
 This could potentially save you a ton of time.
 
-First is when you have a lot of groups - you quickly see which failed and where you need to adjust the rim limit. Also, if there are issues with zeros projected to non-zero, or real respondents projected to zero (that is also causing issues), this is nicely put in front of your eyes.
+First is when you have a lot of groups - you quickly see which failed and where you need to adjust the rim limit. Also, if there are issues with zeros projected to non-zero, or real respondents projected to zero (that is also causing issues), this is nicely put in front of your eyes. A "Furthest from target" column also shows the biggest percentage-point gaps between the target and what was actually achieved, so non-converging rims stand out immediately.
 
 But even if you have one group only - this is still super helpful, as it prints inconsistencies like zero weighted to non-zero target.
 
@@ -56,6 +56,15 @@ The `--options` flag accepts a comma-separated list of flags:
   The header is written only once (when the file is new or empty).
 - `out_reportfile_stats` — add two leading columns, `Report File` and
   `Last Edited`, so every row can be traced back to its source report.
+
+The `--furthest-top N` flag (default `3`) controls how many "furthest from
+target" rows are listed per filter in the last column.
+
+> The "Furthest from target" column ranks by the residual **percentage-point**
+> gap between the target and the achieved output percent. That is a different
+> signal from the report's own orange highlight, which flags the *rim weight*
+> when it is outside the range "0.1 - 12.0"; the two overlap but are not
+> identical.
 
 > To merge reports you must point every run at the **same** `--out` file and
 > use `out_append`. Without `--out`, the output name is derived from the input

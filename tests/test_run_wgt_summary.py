@@ -21,10 +21,11 @@ def _summary_row(the_var, cell_index, inp_freq, inp_perc, proj_freq, proj_perc, 
 
 def _make_result(wgt_filter="F", weight_var="W", matrix_vars=None, status="OK",
                  rim_limit=None, summary_table=None, unw_base=None, wgt_base=None,
-                 weighting_efficiency=None):
+                 weighting_efficiency=None, integrity_error=None):
     # Field order matches the Record namedtuple produced by parse_log().
     return (wgt_filter, weight_var, matrix_vars if matrix_vars is not None else [],
-            status, rim_limit, summary_table, unw_base, wgt_base, weighting_efficiency)
+            status, rim_limit, summary_table, unw_base, wgt_base, weighting_efficiency,
+            integrity_error)
 
 
 def _minimal_report_lines():
@@ -75,14 +76,15 @@ def test_parse_log_no_summary_table_sets_none():
 # write_results
 # ---------------------------------------------------------------------------
 
-def test_write_results_default_seven_columns(tmp_path):
+def test_write_results_default_eight_columns(tmp_path):
     out = tmp_path / "out.csv"
     results = [_make_result(wgt_filter="F", summary_table=[])]
     rws.write_results(str(out), results, {"input_filename": str(tmp_path / "x.htm"), "options": {}})
     lines = out.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 2  # header + one data row
     assert lines[0].split(",") == ['"Filter"', '"Weight Var"', '"Status"', '"Rim Limit"',
-                                   '"Weighting Efficiency"', '"Impossible"', '"Extreme"']
+                                   '"Weighting Efficiency"', '"Impossible"', '"Extreme"',
+                                   '"Furthest from target"']
 
 
 def test_write_results_no_summary_table_leaves_cells_empty(tmp_path):
@@ -239,3 +241,135 @@ def test_parse_log_summary_table_without_matrix_vars_does_not_crash():
     results = rws.parse_log(lines, {})
     assert len(results) == 1
     assert results[0].summary_table[0][0] == "???"
+
+
+# ---------------------------------------------------------------------------
+# Rim weight / Output frequency / Output percent + "Furthest from target"
+# ---------------------------------------------------------------------------
+
+def test_parse_log_attaches_rim_weight_output_percent():
+    lines = [
+        "Weighting filter: F",
+        "Weight var: W",
+        "Matrix vars: A B",
+        "Input frequency\tInput percent\tProjected frequency\tProjected percent",
+        "94.000\t51.65\t81.383\t50.78",      # A target 0
+        "88.000\t48.35\t78.883\t49.22",      # A target 1
+        "------\t------\t------\t------",     # A dashed
+        "182.000\t100.00\t160.266\t100.00",  # A total
+        "60.000\t60.00\t59.400\t59.40",      # B target 0
+        "40.000\t40.00\t39.600\t39.60",      # B target 1
+        "------\t------\t------\t------",     # B dashed
+        "100.000\t100.00\t99.000\t99.00",    # B total
+        "Rim weight\tOutput frequency\tOutput percent",
+        "1.24\t79.877\t49.84",               # A target 0 -> 49.84
+        "0.63\t80.388\t50.16",               # A target 1 -> 50.16
+        "\t------\t------",                  # A dashed
+        "\t160.265\t100.00",                 # A total
+        "1.10\t58.000\t58.00",               # B target 0 -> 58.00
+        "0.90\t38.000\t38.00",               # B target 1 -> 38.00
+        "\t------\t------",                  # B dashed
+        "\t99.000\t99.00",                   # B total
+        "Rim weighting efficiency 84.8%",
+    ]
+    results = rws.parse_log(lines, {})
+    assert len(results) == 1
+    r = results[0]
+    assert r.integrity_error is None
+    assert r.summary_table[0][7] == 49.84
+    assert r.summary_table[1][7] == 50.16
+    assert r.summary_table[2][7] == 0.0
+    assert r.summary_table[3][7] == 100.0
+    assert r.summary_table[4][7] == 58.0
+    assert r.summary_table[5][7] == 38.0
+    assert r.summary_table[6][7] == 0.0
+    assert r.summary_table[7][7] == 99.0
+
+
+def test_write_results_furthest_from_target_column(tmp_path):
+    out = tmp_path / "out.csv"
+    table = [
+        ("A", 0, "94.000", "51.65", "81.383", "50.78", 1.0, 49.84),
+        ("A", 1, "88.000", "48.35", "78.883", "49.22", 1.0, 50.16),
+        ("B", 0, "60.000", "60.00", "59.400", "59.40", 1.0, 58.00),
+        ("B", 1, "40.000", "40.00", "39.600", "39.60", 1.0, 38.00),
+    ]
+    results = [_make_result(wgt_filter="F", summary_table=table)]
+    rws.write_results(str(out), results, {"input_filename": str(tmp_path / "x.htm"), "options": {}})
+    text = out.read_text(encoding="utf-8")
+    assert 'B / Cell2 (target 39.60% -> achieved 38.00% = -1.60pp)' in text
+    assert 'B / Cell1 (target 59.40% -> achieved 58.00% = -1.40pp)' in text
+    assert 'A / Cell1 (target 50.78% -> achieved 49.84% = -0.94pp)' in text
+    # ranked by absolute gap: the -0.94pp row must come after the -1.60/-1.40 rows
+    assert text.index('B / Cell2') < text.index('B / Cell1') < text.index('A / Cell1')
+
+
+def test_parse_log_rim_weight_row_count_mismatch_sets_integrity_error():
+    lines = [
+        "Weighting filter: F",
+        "Weight var: W",
+        "Matrix vars: A B",
+        "Input frequency\tInput percent\tProjected frequency\tProjected percent",
+        "94.000\t51.65\t81.383\t50.78",
+        "------\t------\t------\t------",
+        "182.000\t100.00\t160.266\t100.00",
+        "60.000\t60.00\t59.400\t59.40",
+        "------\t------\t------\t------",
+        "100.000\t100.00\t99.000\t99.00",
+        # Rim weight table only covers rim A (3 rows), not rim B.
+        "Rim weight\tOutput frequency\tOutput percent",
+        "1.24\t79.877\t49.84",
+        "\t------\t------",
+        "\t160.265\t100.00",
+        "Rim weighting efficiency 84.8%",
+    ]
+    results = rws.parse_log(lines, {})
+    assert results[0].integrity_error == "row count mismatch (summary 6 vs rim weights 3)"
+
+
+def test_parse_log_rim_weight_structure_mismatch_sets_integrity_error():
+    lines = [
+        "Weighting filter: F",
+        "Weight var: W",
+        "Matrix vars: A",
+        "Input frequency\tInput percent\tProjected frequency\tProjected percent",
+        "94.000\t51.65\t81.383\t50.78",
+        "------\t------\t------\t------",
+        "182.000\t100.00\t160.266\t100.00",
+        # Row 2 is a target where the summary has a dashed separator row.
+        "Rim weight\tOutput frequency\tOutput percent",
+        "1.24\t79.877\t49.84",
+        "0.63\t80.388\t50.16",
+        "\t160.265\t100.00",
+        "Rim weighting efficiency 84.8%",
+    ]
+    results = rws.parse_log(lines, {})
+    assert "structure mismatch at row 2" in results[0].integrity_error
+
+
+def test_furthest_from_target_skips_malformed_values():
+    rows = [
+        ("A", 0, "94.000", "51.65", "81.383", "50.78", 1.0, 49.84),
+        ("B", 1, "88.000", "48.35", "78.883", "not-a-number", 1.0, 50.16),
+        ("C", 2, "60.000", "60.00", "59.400", "59.40", 1.0, float("nan")),
+    ]
+    txt = rws.furthest_from_target(rows, None, 3)
+    assert "A / Cell1" in txt
+    assert "B / Cell2" not in txt
+    assert "C / Cell3" not in txt
+
+
+def test_furthest_from_target_integrity_error_and_missing_table():
+    assert rws.furthest_from_target([], "row count mismatch", 3) == "#N/A: row count mismatch"
+    assert rws.furthest_from_target(None, None, 3) == ""
+
+
+def test_write_results_furthest_integrity_error_shows_na(tmp_path):
+    out = tmp_path / "out.csv"
+    table = [
+        ("A", 0, "94.000", "51.65", "81.383", "50.78", 1.0, 49.84),
+    ]
+    results = [_make_result(wgt_filter="F", summary_table=table, integrity_error="row count mismatch")]
+    rws.write_results(str(out), results, {"input_filename": str(tmp_path / "x.htm"), "options": {}})
+    text = out.read_text(encoding="utf-8")
+    assert "#N/A: row count mismatch" in text

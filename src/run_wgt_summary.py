@@ -2,7 +2,8 @@
 
 Parses an HTML report produced by the Unicom/IBM Professional weighting tool
 and writes a CSV summary (one row per weighting group/filter), highlighting
-failed groups and "impossible" (zero -> non-zero) or "extreme" cells.
+failed groups and "impossible" (zero -> non-zero), "extreme" cells, and the
+targets that ended up furthest from their achieved output percent.
 """
 
 import re
@@ -21,7 +22,26 @@ from bs4 import BeautifulSoup, NavigableString
 Record = namedtuple(
     "Record",
     ['wgt_filter', 'weight_var', 'matrix_vars', 'status', 'rim_limit',
-     'summary_table', 'unw_base', 'wgt_base', 'weighting_efficiency'],
+     'summary_table', 'unw_base', 'wgt_base', 'weighting_efficiency',
+     'integrity_error'],
+)
+
+# The "Rim weight / Output frequency / Output percent" table that follows the
+# "Input frequency ..." summary table. The first cell is empty on the dashed
+# separator and total rows, so it is optional.
+RIM_WEIGHT_HEADER_RE = re.compile(
+    r'^\s*?Rim weight\s*?\t\s*?Output frequency\s*?\t\s*?Output percent\s*?$',
+    re.I,
+)
+RIM_WEIGHT_ROW_RE = re.compile(
+    r'^\s*?'
+    r'(------|\d+(?:\.\d+)?|-nan\(ind\))?'
+    r'\s*?\t\s*?'
+    r'(------|\d+(?:\.\d+)?|-nan\(ind\))'
+    r'\s*?\t\s*?'
+    r'(------|\d+(?:\.\d+)?|-nan\(ind\))'
+    r'\s*?$',
+    re.I,
 )
 
 
@@ -145,6 +165,33 @@ def parse_log(lines: Iterable[str], config: Optional[dict] = None) -> List[Recor
             return float('nan')
 
 
+    def classify_summary_row(srow):
+        # Total rows carry the sentinel cell index (-1000); dashed rows carry a
+        # '------' input frequency; anything else is a real target row.
+        if not safe_is_nonnegative_number(srow[1]):
+            return 'total'
+        if srow[2] == '------':
+            return 'dashed'
+        return 'target'
+
+
+    def classify_rim_row(first_cell, out_freq):
+        if first_cell is None:
+            return 'dashed' if out_freq == '------' else 'total'
+        return 'target'
+
+
+    def finalize_integrity_error():
+        if summary_table is not None and not rim_weight_table_seen:
+            integrity_errors.append('no Rim weight / Output frequency / Output percent table found')
+        elif summary_table is None and rim_weight_table_seen:
+            integrity_errors.append('Rim weight table present but no summary table to align against')
+        elif summary_table is not None and rim_weight_row_index != len(summary_table):
+            integrity_errors.append('row count mismatch (summary {s} vs rim weights {r})'.format(
+                s=len(summary_table), r=rim_weight_row_index))
+        return '; '.join(integrity_errors) if integrity_errors else None
+
+
     current_group_wgt_filter = None
     matrix_vars = None
     has_error = False
@@ -158,6 +205,10 @@ def parse_log(lines: Iterable[str], config: Optional[dict] = None) -> List[Recor
     summary_curr_table_var_index = None
     summary_table_curr_cell_index = None
     summary_table_was_last_line_a_separator = None
+    is_within_rim_weight_table = False
+    rim_weight_row_index = 0
+    rim_weight_table_seen = False
+    integrity_errors = []
     results = []
 
     for line in lines:
@@ -175,6 +226,7 @@ def parse_log(lines: Iterable[str], config: Optional[dict] = None) -> List[Recor
                     unw_base = unw_base,
                     wgt_base = wgt_base,
                     weighting_efficiency = weighting_efficiency,
+                    integrity_error = finalize_integrity_error(),
                 ))
             current_group_wgt_filter = m.group(1)
             has_error = False
@@ -182,6 +234,10 @@ def parse_log(lines: Iterable[str], config: Optional[dict] = None) -> List[Recor
             is_within_summary_table = False
             summary_table = None
             weight_var = None
+            is_within_rim_weight_table = False
+            rim_weight_row_index = 0
+            rim_weight_table_seen = False
+            integrity_errors = []
             continue
 
         if re.search(r'(?:failure|error)', line, re.I):
@@ -222,6 +278,7 @@ def parse_log(lines: Iterable[str], config: Optional[dict] = None) -> List[Recor
                     m.group(3),
                     m.group(4),
                     ratio,
+                    float('nan'),  # achieved Output percent, filled in below
                 ))
                 if summary_table_was_last_line_a_separator:
                     unw_base = clean_summary_outputs_value(m.group(1))
@@ -244,6 +301,36 @@ def parse_log(lines: Iterable[str], config: Optional[dict] = None) -> List[Recor
             summary_curr_table_var_index = 0
             summary_table_curr_cell_index = 0
 
+        if RIM_WEIGHT_HEADER_RE.search(line):
+            is_within_rim_weight_table = True
+            rim_weight_table_seen = True
+            rim_weight_row_index = 0
+            continue
+
+        if is_within_rim_weight_table:
+            m = RIM_WEIGHT_ROW_RE.match(line)
+            if m:
+                first_cell = m.group(1)
+                out_freq = m.group(2)
+                out_perc = m.group(3)
+                achieved = clean_summary_outputs_value(out_perc)
+                rim_kind = classify_rim_row(first_cell, out_freq)
+                if summary_table is not None and rim_weight_row_index < len(summary_table):
+                    srow = summary_table[rim_weight_row_index]
+                    if classify_summary_row(srow) != rim_kind:
+                        integrity_errors.append('structure mismatch at row {n} (summary {s} vs rim weights {r})'.format(
+                            n=rim_weight_row_index + 1,
+                            s=classify_summary_row(srow),
+                            r=rim_kind,
+                        ))
+                    summary_table[rim_weight_row_index] = srow[:7] + (achieved,)
+                rim_weight_row_index += 1
+            else:
+                if re.match(r'^\s*$', line):
+                    pass
+                else:
+                    is_within_rim_weight_table = False
+
     if current_group_wgt_filter:
         results.append(Record(
             wgt_filter = current_group_wgt_filter,
@@ -255,9 +342,61 @@ def parse_log(lines: Iterable[str], config: Optional[dict] = None) -> List[Recor
             unw_base = unw_base,
             wgt_base = wgt_base,
             weighting_efficiency = weighting_efficiency,
+            integrity_error = finalize_integrity_error(),
         ))
 
     return results
+
+
+def furthest_from_target(summary_table: Any, integrity_error: Optional[str], top_n: int) -> str:
+    """Format the rows whose achieved percent is furthest from its target.
+
+    Rows are ranked by the absolute difference in percentage points between the
+    achieved ``Output percent`` (summary-row field 7) and the target
+    ``Projected percent`` (field 5); only the ``top_n`` biggest gaps are kept.
+    Malformed input never raises: an integrity error (or missing data) becomes
+    ``#N/A`` text in the cell.
+
+    Note: this residual %-point gap is intentionally a different signal from the
+    report's own color highlight, which flags the *rim weight* (first column)
+    when it is outside the legend range "0.1 - 12.0". A cell can need a huge rim
+    weight yet still converge close to target, and vice versa, so the two lists
+    overlap but are not identical.
+    """
+    if integrity_error:
+        return '#N/A: ' + safe_convert_txt(integrity_error)
+    if not summary_table:
+        return ''
+    candidates = []
+    for r in summary_table:
+        # Only real target rows: a non-negative cell index (totals use the -1000
+        # sentinel) and a numeric input frequency (dashed rows use '------').
+        if not safe_is_nonnegative_number(r[1]):
+            continue
+        if r[2] == '------':
+            continue
+        achieved = r[7] if len(r) >= 8 else float('nan')
+        try:
+            target_f = float(r[5])
+            achieved_f = float(achieved)
+        except (TypeError, ValueError):
+            continue
+        if math.isnan(target_f) or math.isnan(achieved_f):
+            continue
+        diff = achieved_f - target_f
+        candidates.append((abs(diff), diff, r, target_f, achieved_f))
+    candidates.sort(key=lambda c: c[0], reverse=True)
+    return ', '.join(
+        '{v} / Cell{n} (target {t}% -> achieved {a}% = {d}pp)'.format(
+            v=r[0],
+            n=(r[1] + 1) if safe_is_nonnegative_number(r[1]) else '#Other',
+            t=safe_round(target_f),
+            a=safe_round(achieved_f),
+            d='{0:+.2f}'.format(diff),
+        )
+        for _, diff, r, target_f, achieved_f in candidates[:top_n]
+    )
+
 
 def write_results(report_fname: str, results: List[Record], config: Optional[dict] = None) -> None:
     """Write parsed records to a CSV summary file.
@@ -271,6 +410,10 @@ def write_results(report_fname: str, results: List[Record], config: Optional[dic
     options = config.get('options', {})
     out_append = bool(options.get('out_append'))
     out_reportfile_stats = bool(options.get('out_reportfile_stats'))
+    try:
+        furthest_top = int(config.get('furthest_top', 3))
+    except (TypeError, ValueError):
+        furthest_top = 3
 
     # In append mode we reuse an existing CSV, so only write the header when
     # the file is new or empty - otherwise the header would be duplicated.
@@ -299,7 +442,7 @@ def write_results(report_fname: str, results: List[Record], config: Optional[dic
 
     with open(report_fname, 'a' if out_append else 'w', encoding='utf-8') as out:
         if need_write_header:
-            out.write('{cols_prepend}"{cell1}","{cell2}","{cell3}","{cell4}","{cell5}","{cell6}","{cell7}"\n'.format(
+            out.write('{cols_prepend}"{cell1}","{cell2}","{cell3}","{cell4}","{cell5}","{cell6}","{cell7}","{cell8}"\n'.format(
                 cols_prepend = header_prepend,
                 cell1 = safe_escape_quotes_csv('Filter'),
                 cell2 = safe_escape_quotes_csv('Weight Var'),
@@ -308,10 +451,11 @@ def write_results(report_fname: str, results: List[Record], config: Optional[dic
                 cell5 = safe_escape_quotes_csv('Weighting Efficiency'),
                 cell6 = safe_escape_quotes_csv('Impossible'),
                 cell7 = safe_escape_quotes_csv('Extreme'),
+                cell8 = safe_escape_quotes_csv('Furthest from target'),
             ))
-        for wgt_filter, weight_var, matrix_vars, status, rim_limit, summary_table, unw_base, wgt_base, weighting_efficiency in results:
+        for wgt_filter, weight_var, matrix_vars, status, rim_limit, summary_table, unw_base, wgt_base, weighting_efficiency, integrity_error in results:
             if summary_table is None:
-                # No summary table: leave both cells empty (they hold
+                # No summary table: leave the cells empty (they hold
                 # comma-separated lists, and an empty list == empty cell).
                 impossible_txt = ''
                 extreme_txt = ''
@@ -320,7 +464,8 @@ def write_results(report_fname: str, results: List[Record], config: Optional[dic
                 extreme_rows = [ r for r in summary_table if not math.isnan(r[6]) and not ( (r[6]>.32) and (r[6]<3.2) ) ]
                 impossible_txt = ', '.join([ '{v} / Cell{n} ({m2}% -> {m4}%)'.format(v=r[0],n=r[1]+1 if safe_is_nonnegative_number(r[1]) else '#Other',m2=r[3],m4=r[5]) for r in bad_rows ])
                 extreme_txt = ', '.join([ '{v} / Cell{n} ({m2}% -> {m4}% = {ratio}x)'.format(v=r[0],n=r[1]+1 if safe_is_nonnegative_number(r[1]) else '#Other',m2=r[3],m4=r[5],ratio=safe_round(r[6])) for r in extreme_rows ])
-            out.write('{cols_prepend}"{cell1}","{cell2}","{cell3}","{cell4}","{cell5}","{cell6}","{cell7}"\n'.format(
+            furthest_txt = furthest_from_target(summary_table, integrity_error, furthest_top)
+            out.write('{cols_prepend}"{cell1}","{cell2}","{cell3}","{cell4}","{cell5}","{cell6}","{cell7}","{cell8}"\n'.format(
                 cols_prepend = row_prepend,
                 cell1 = safe_escape_quotes_csv(wgt_filter),
                 cell2 = safe_escape_quotes_csv(weight_var),
@@ -329,6 +474,7 @@ def write_results(report_fname: str, results: List[Record], config: Optional[dic
                 cell5 = safe_escape_quotes_csv(weighting_efficiency),
                 cell6 = safe_escape_quotes_csv(impossible_txt),
                 cell7 = safe_escape_quotes_csv(extreme_txt),
+                cell8 = safe_escape_quotes_csv(furthest_txt),
             ))
     
 
@@ -359,12 +505,20 @@ def main() -> None:
             required=False,
             help="Comma-separated output flags: out_append, out_reportfile_stats"
         )
+        parser.add_argument(
+            "--furthest-top",
+            required=False,
+            type=int,
+            default=3,
+            help="How many furthest-from-target rows to list in the output column (default 3)",
+        )
 
         args = parser.parse_args()
 
         config = {}
         config['time_start'] = time_start
         config['options'] = {}
+        config['furthest_top'] = args.furthest_top
 
         fname = Path(args.file)
         fname = fname.resolve()

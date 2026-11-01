@@ -8,8 +8,10 @@ before finishing every task.
 `Wgt-Report-Summary` parses HTML weighting reports produced by the Unicom/IBM
 Professional weighting tool and emits a compact CSV summary (one row per weighting
 group/filter). Primary use: quickly see which groups failed, which rim limits need
-adjusting, and which cells were "impossible" (zero -> non-zero) or "extreme"
-(outside the 0.32x-3.2x ratio band).
+adjusting, and which cells were "impossible" (zero -> non-zero), "extreme"
+(outside the 0.32x-3.2x ratio band), or "furthest from target" (largest
+percentage-point gap between the projected target percent and the achieved output
+percent).
 
 ## Current layout
 
@@ -64,6 +66,24 @@ adjusting, and which cells were "impossible" (zero -> non-zero) or "extreme"
   derived from the real report by replacing variable names and permuting every
   digit (same format/width, different values), so tests exercise the real layout
   without exposing real data.
+- **"Furthest from target" column (2026-11)**: the report's second table
+  `Rim weight / Output frequency / Output percent` is parsed and its third column
+  (the *achieved* percent) is attached to each summary-table row as field index 7.
+  Rows are ranked by `abs(achieved - projected percent)` and the top N (default 3,
+  `--furthest-top`) are listed in the new CSV column. Malformed input never
+  crashes: unparseable values become NaN and are skipped; a row-count or
+  structure mismatch (dashed/total/target misalignment) is reported as `#N/A: ...`
+  in the cell. The summary and rim-weight tables are 1:1 in order (each rim = N
+  targets + a dashed row + a total row), which is the alignment this relies on.
+- **"Furthest from target" vs the report's color highlight (verified 2026-11)**:
+  the report itself highlights (orange `#FF8800`) the first-column *rim weight*
+  when it falls outside the legend range "0.1 - 12.0". That is a *different*
+  signal from this column, which ranks by the residual percentage-point gap
+  `|achieved% - projected%|`. They overlap but are not identical: a cell can need
+  a huge multiplier yet still converge close to its target, and a cell can
+  under-converge (large % gap) while its multiplier stays inside the band. The
+  %-point gap was kept by request; the distinction is documented here rather than
+  conflated with the tool's highlight.
 
 ## Gotchas
 

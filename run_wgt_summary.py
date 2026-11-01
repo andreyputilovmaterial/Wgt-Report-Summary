@@ -207,12 +207,52 @@ def parse_log(lines,config={}):
     return results
 
 def write_results(report_fname,results,config={}):
-    with open(report_fname, "w", encoding="utf-8") as out:
-        out.write('"Filter","Weight var","Status","Rim Limit","Weighting Efficiency","Impossible","Extreme"\n')
+    options = config.get('options', {})
+    out_append = bool(options.get('out_append'))
+    out_reportfile_stats = bool(options.get('out_reportfile_stats'))
+
+    # In append mode we reuse an existing CSV, so only write the header when
+    # the file is new or empty - otherwise the header would be duplicated.
+    need_write_header = (not out_append) or (not Path(report_fname).exists() or Path(report_fname).stat().st_size == 0)
+
+    # When requested, prepend two identifying columns so every row can be
+    # traced back to the source report file (and its last-edit timestamp).
+    input_filename_mtime = '???'
+    try:
+        input_filename_mtime = datetime.fromtimestamp(Path(config['input_filename']).stat().st_mtime).isoformat()
+    except Exception as e:
+        input_filename_mtime = safe_convert_txt(e)
+
+    if out_reportfile_stats:
+        header_prepend = '"{cellprepend1}","{cellprepend2}",'.format(
+            cellprepend1 = safe_escape_quotes_csv('Report File'),
+            cellprepend2 = safe_escape_quotes_csv('Last Edited'),
+        )
+        row_prepend = '"{cellprepend1}","{cellprepend2}",'.format(
+            cellprepend1 = safe_escape_quotes_csv(Path(config['input_filename']).stem),
+            cellprepend2 = safe_escape_quotes_csv(input_filename_mtime),
+        )
+    else:
+        header_prepend = ''
+        row_prepend = ''
+
+    with open(report_fname, 'a' if out_append else 'w', encoding='utf-8') as out:
+        if need_write_header:
+            out.write('{cols_prepend}"{cell1}","{cell2}","{cell3}","{cell4}","{cell5}","{cell6}","{cell7}"\n'.format(
+                cols_prepend = header_prepend,
+                cell1 = safe_escape_quotes_csv('Filter'),
+                cell2 = safe_escape_quotes_csv('Weight Var'),
+                cell3 = safe_escape_quotes_csv('Status'),
+                cell4 = safe_escape_quotes_csv('Rim Limit'),
+                cell5 = safe_escape_quotes_csv('Weighting Efficiency'),
+                cell6 = safe_escape_quotes_csv('Impossible'),
+                cell7 = safe_escape_quotes_csv('Extreme'),
+            ))
         for filter, weight_var, matrix_vars, status, rim_limit, summary_table, unw_base, wgt_base, weighting_efficiency in results:
             bad_rows = [ r for r in summary_table if math.isnan(r[6]) ] if summary_table is not None else ('Exception: no table parsed',-2)
             extreme_rows = [ r for r in summary_table if not math.isnan(r[6]) and not ( (r[6]>.32) and (r[6]<3.2) ) ] if summary_table is not None else ('Exception: no table parsed',-2)
-            out.write('"{cell1}","{cell2}","{cell3}","{cell4}","{cell5}","{cell6}","{cell7}"\n'.format(
+            out.write('{cols_prepend}"{cell1}","{cell2}","{cell3}","{cell4}","{cell5}","{cell6}","{cell7}"\n'.format(
+                cols_prepend = row_prepend,
                 cell1 = safe_escape_quotes_csv(filter),
                 cell2 = safe_escape_quotes_csv(weight_var),
                 cell3 = safe_escape_quotes_csv(status),
@@ -244,11 +284,17 @@ def main():
             required=False,
             help="Output summary file, CSV"
         )
+        parser.add_argument(
+            "--options",
+            required=False,
+            help="Comma-separated output flags: out_append, out_reportfile_stats"
+        )
 
         args = parser.parse_args()
 
         config = {}
         config['time_start'] = time_start
+        config['options'] = {}
 
         fname = Path(args.file)
         fname = fname.resolve()
@@ -263,6 +309,15 @@ def main():
             report_fname = make_output_name(fname,config)
         report_fname = Path(report_fname).resolve()
         report_fname = safe_convert_txt(report_fname)
+
+        if args.options:
+            for flag in [f.strip() for f in args.options.split(',')]:
+                if flag == 'out_append':
+                    config['options']['out_append'] = True
+                elif flag == 'out_reportfile_stats':
+                    config['options']['out_reportfile_stats'] = True
+                else:
+                    raise Exception('unrecognized options flag: {f}'.format(f=flag))
 
         print('{script}: script started at {dt}'.format(dt=time_start,script=parser.prog))
 

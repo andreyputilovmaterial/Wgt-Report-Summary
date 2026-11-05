@@ -16,12 +16,18 @@ percent).
 ## Current layout
 
 - `src/run_wgt_summary.py` — the single self-contained script (stdlib + `bs4`).
+- `build.sh` / `build.bat` — build the release folder `dist/` (gitignored):
+  copy the `.py` and every `scripts/run_*.bat`/`run_*.sh`, and rewrite each
+  wrapper's `SCRIPT_PATH` so the `.py` is expected in the same folder (the
+  `..\src\` / `../src/` prefix is stripped). `.bat` wrappers are normalized to
+  CRLF.
 - `scripts/` — three Windows `.bat` examples (paths are placeholders the user
   updates; they are not required to run as-is in the repo):
   - `run_wgt_summary_single.bat` — process one report.
   - `run_wgt_summary_multi.bat` — append several reports, listed explicitly.
-  - `run_wgt_summary_scan.bat` — auto-scan `Weight_*.htm`, with an
-    `ONLY_RECENT=1` toggle to process only files edited within the last 24h.
+  - `run_wgt_summary_scan.bat` — auto-scan `REPORT_DIR` for `Weight_*.htm`,
+    with a `RECENT_HOURS` cutoff (blank = all files) to process only files
+    edited within the last N hours.
 - `tests/` — pytest suite, including `fixtures/dummy_weight_report.htm` (an
   anonymized sample report).
 - `tests-real-sensitive-data/` — gitignored; holds real/proprietary report inputs
@@ -36,8 +42,15 @@ percent).
   orchestration logic (scanning, recency filtering, etc.) inside the Python script —
   that belongs in the wrapper `.bat`/shell scripts.
 - **Script lives in `src/`** (2026-11): requested. In a release the `.bat` and
-  `.py` are expected to sit side by side, so each `.bat` declares a `SCRIPT`
-  variable that the user updates to the real path.
+  `.py` are expected to sit side by side, so each `.bat` declares a `SCRIPT_PATH`
+  variable (renamed from `SCRIPT`) that the user updates to the real path.
+- **Build step (`build.sh`/`build.bat`) (2026-11)**: produces a self-contained
+  `dist/` for Windows by copying the `.py` and the `.bat` wrappers together and
+  rewriting each wrapper's `SCRIPT_PATH` to `run_wgt_summary.py` (same folder).
+  Wrapper config params were renamed for clarity: `OUT` -> `OUTPUT_FILENAME`,
+  `SCRIPT` -> `SCRIPT_PATH`, `ONLY_RECENT` -> `RECENT_HOURS` (numeric hours;
+  blank/unset = no cutoff, via `if defined`), plus a new `REPORT_DIR` first param
+  that each wrapper resolves to an absolute path and echoes to the console.
 - **Append mode via `--options out_append`**: the script stays single-file per
   invocation; "many reports -> one CSV" is achieved by running it once per file
   with a shared `--out`. Multi-file scanning is an example loop in the `.bat`,

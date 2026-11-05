@@ -72,15 +72,30 @@ target" rows are listed per filter in the last column.
 
 ### Windows `.bat` examples
 
-Three examples live in `scripts/` (each declares a `SCRIPT` path variable that
-you update to match your layout; in a release the `.bat` and `.py` sit side by
-side):
+Three examples live in `scripts/`. Each declares, at the top, a `REPORT_DIR`
+(the folder to look in) and a `SCRIPT_PATH` (the path to `run_wgt_summary.py`).
+In the repo the script lives under `src\`, so `SCRIPT_PATH` is `..\src\run_wgt_summary.py`;
+in a release the `.bat` and `.py` sit side by side, so `SCRIPT_PATH` is just
+`run_wgt_summary.py`:
 
-- `run_wgt_summary_single.bat` — process a single report.
+- `run_wgt_summary_single.bat` — process a single report (`REPORT_FILE`).
 - `run_wgt_summary_multi.bat` — append several reports, listed explicitly.
-- `run_wgt_summary_scan.bat` — scan the current folder for every `Weight_*.htm`
-  and append them into one CSV. It has an `ONLY_RECENT` toggle: set `ONLY_RECENT=1`
-  to process only files edited within the last 24 hours.
+- `run_wgt_summary_scan.bat` — scan `REPORT_DIR` for every `Weight_*.htm` and
+  append them into one CSV (`OUTPUT_FILENAME`). Its `RECENT_HOURS` cutoff lets
+  you process only files edited within the last N hours; leave it blank to
+  process all files.
+
+## Build (release folder)
+
+To assemble a runnable `dist/` folder with the script and all wrappers together,
+run the build script for your platform:
+
+- macOS / Linux: `bash build.sh`
+- Windows: `build.bat`
+
+Both copy `src/run_wgt_summary.py` and every `scripts/run_*.bat` (and `run_*.sh`)
+into `dist/`, rewriting each wrapper's `SCRIPT_PATH` so the `.py` is expected in
+the same folder. The `.bat` wrappers are normalized to CRLF line endings.
 
 ## Development
 

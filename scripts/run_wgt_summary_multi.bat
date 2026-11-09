@@ -27,27 +27,27 @@ for %%I in ("%REPORT_DIR%") do set "REPORT_DIR=%%~fI"
 echo Looking for reports in: %REPORT_DIR%
 
 REM Start from a clean output file.
-if exist "%OUTPUT_FILENAME%" del "%OUTPUT_FILENAME%"
+if exist "%REPORT_DIR%\%OUTPUT_FILENAME%" del "%REPORT_DIR%\%OUTPUT_FILENAME%"
 
-python "%SCRIPT_PATH%" --file "%REPORT_DIR%\Weight_Report_DE.htm" --out "%OUTPUT_FILENAME%" --options out_append,out_reportfile_stats
+python "%SCRIPT_PATH%" --file "%REPORT_DIR%\Weight_Report_DE.htm" --out "%REPORT_DIR%\%OUTPUT_FILENAME%" --options out_append,out_reportfile_stats
 if errorlevel 1 (
     echo FAILED while processing %REPORT_DIR%\Weight_Report_DE.htm
     pause
     exit /b 1
 )
 
-python "%SCRIPT_PATH%" --file "%REPORT_DIR%\Weight_Report_FR.htm" --out "%OUTPUT_FILENAME%" --options out_append,out_reportfile_stats
+python "%SCRIPT_PATH%" --file "%REPORT_DIR%\Weight_Report_FR.htm" --out "%REPORT_DIR%\%OUTPUT_FILENAME%" --options out_append,out_reportfile_stats
 if errorlevel 1 (
     echo FAILED while processing %REPORT_DIR%\Weight_Report_FR.htm
     pause
     exit /b 1
 )
 
-python "%SCRIPT_PATH%" --file "%REPORT_DIR%\Weight_Report_UK.htm" --out "%OUTPUT_FILENAME%" --options out_append,out_reportfile_stats
+python "%SCRIPT_PATH%" --file "%REPORT_DIR%\Weight_Report_UK.htm" --out "%REPORT_DIR%\%OUTPUT_FILENAME%" --options out_append,out_reportfile_stats
 if errorlevel 1 (
     echo FAILED while processing %REPORT_DIR%\Weight_Report_UK.htm
     pause
     exit /b 1
 )
 
-echo Done. Combined summary written to: %OUTPUT_FILENAME%
+echo Done. Combined summary written to: %REPORT_DIR%\%OUTPUT_FILENAME%

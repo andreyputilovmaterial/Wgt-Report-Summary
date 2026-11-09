@@ -17,3 +17,7 @@ Living TODO list. Add ideas freely; triage at the end of each task.
 - [x] Rework wrapper config params (`REPORT_DIR` first, `OUTPUT_FILENAME`,
   `SCRIPT_PATH`, `RECENT_HOURS`), print the scan folder to the console, and add a
   "FAILED" + pause error guard.
+- [x] Make success messages truthful: `write_results` returns the row count so
+  `main()` reports rows honestly, and `run_wgt_summary_scan.bat` only claims a
+  combined CSV was written when at least one report was processed (counts with
+  delayed expansion; guards the no-match wildcard).

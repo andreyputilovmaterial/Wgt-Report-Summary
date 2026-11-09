@@ -51,6 +51,21 @@ percent).
   `SCRIPT` -> `SCRIPT_PATH`, `ONLY_RECENT` -> `RECENT_HOURS` (numeric hours;
   blank/unset = no cutoff, via `if defined`), plus a new `REPORT_DIR` first param
   that each wrapper resolves to an absolute path and echoes to the console.
+- **Output path & console colors (2026-11)**: the output CSV path is resolved to
+  a full absolute path up front — the default name lands next to the input
+  report, and the combined multi/scan output goes into `REPORT_DIR` (not the
+  launch/bat folder). The console prints the resolved path, the saved row count
+  + filename in green (or a "no weighting filters found" warning), and the
+  exception message in red (same ANSI pattern as `MDM-Diff-py/src/diff.py`).
+- **Truthful success messages (2026-11)**: `write_results` returns the number of
+  data rows it wrote, and `main()` prints `saved N rows to …` only when N > 0
+  (otherwise `no weighting filters found in …`). `run_wgt_summary_scan.bat`
+  counts processed files (`PROCESSED_COUNT`, using `setlocal
+  EnableDelayedExpansion`) and prints "Done. Combined summary written to …" only
+  when at least one file was processed; otherwise it prints "No Weight_*.htm
+  files found …; nothing written". The "process all files" loop is also guarded
+  with `if exist "%%F"` so a wildcard with no match doesn't run on the literal
+  `Weight_*.htm` path.
 - **Append mode via `--options out_append`**: the script stays single-file per
   invocation; "many reports -> one CSV" is achieved by running it once per file
   with a shared `--out`. Multi-file scanning is an example loop in the `.bat`,

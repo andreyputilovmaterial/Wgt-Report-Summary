@@ -18,6 +18,12 @@ from typing import Any, Iterable, Iterator, List, Optional, Union
 from bs4 import BeautifulSoup, NavigableString
 
 
+# Terminal colors (same pattern as the MDM-Diff-py tool).
+STDOUT_COLOR_RED = "\033[31m"
+STDOUT_COLOR_GREEN = "\033[32m"
+STDOUT_COLOR_RESET = "\033[0m"
+
+
 # One parsed weighting group/filter.
 Record = namedtuple(
     "Record",
@@ -48,13 +54,15 @@ RIM_WEIGHT_ROW_RE = re.compile(
 def make_output_name(fname: str, config: Optional[dict] = None) -> str:
     """Build the default output CSV name for an input report.
 
-    Uses the input stem plus an ``MM.DD.YYYY`` timestamp from the run start time.
+    Uses the input stem plus an ``MM.DD.YYYY`` timestamp from the run start time,
+    resolved to a full absolute path (next to the input report).
     """
     if config is None:
         config = {}
     today_americanstyle_str = config['time_start'].strftime('%m.%d.%Y')
     p = Path(fname)
     report_fname = p.with_stem(f"{p.stem}-summary-{today_americanstyle_str}").with_suffix('.csv')
+    report_fname = report_fname.resolve()
     return safe_escape_quotes_csv(report_fname)
 
 
@@ -398,12 +406,14 @@ def furthest_from_target(summary_table: Any, integrity_error: Optional[str], top
     )
 
 
-def write_results(report_fname: str, results: List[Record], config: Optional[dict] = None) -> None:
+def write_results(report_fname: str, results: List[Record], config: Optional[dict] = None) -> int:
     """Write parsed records to a CSV summary file.
 
     Honors ``options.out_append`` (append instead of overwrite, header only when
     new/empty) and ``options.out_reportfile_stats`` (prepend ``Report File`` and
     ``Last Edited`` columns).
+
+    Returns the number of data rows written (``len(results)``).
     """
     if config is None:
         config = {}
@@ -476,7 +486,8 @@ def write_results(report_fname: str, results: List[Record], config: Optional[dic
                 cell7 = safe_escape_quotes_csv(extreme_txt),
                 cell8 = safe_escape_quotes_csv(furthest_txt),
             ))
-    
+
+    return len(results)
 
 
 def main() -> None:
@@ -526,13 +537,14 @@ def main() -> None:
             raise FileNotFoundError(f'{fname} not found')
         fname = safe_convert_txt(fname)
         
-        report_fname = None
+        # Resolve the output path to a full absolute path up front, so the
+        # console prints an unambiguous location. The default (derived from the
+        # input report) lands next to the .htm report, not in the folder the
+        # script was launched from.
         if args.out:
-            report_fname = args.out
+            report_fname = safe_convert_txt(Path(args.out).resolve())
         else:
-            report_fname = make_output_name(fname,config)
-        report_fname = Path(report_fname).resolve()
-        report_fname = safe_convert_txt(report_fname)
+            report_fname = make_output_name(fname, config)
 
         if args.options:
             for flag in [f.strip() for f in args.options.split(',')]:
@@ -551,8 +563,11 @@ def main() -> None:
         print('reading {f}'.format(f=fname))
         results = parse_log(read_html(safe_convert_txt(fname),config),config)
 
-        print(f"Writing results to: {report_fname}")
-        write_results(report_fname,results,config)
+        rows_written = write_results(report_fname, results, config)
+        if rows_written:
+            print(f"{parser.prog}: saved {rows_written} rows to {STDOUT_COLOR_GREEN}{report_fname}{STDOUT_COLOR_RESET}")
+        else:
+            print(f"{parser.prog}: no weighting filters found in {fname}")
 
         time_finish = datetime.now()
         print('{script}: finished at {dt} (elapsed {duration})'.format(script=parser.prog,dt=time_finish,duration=time_finish-time_start))
@@ -573,7 +588,7 @@ def main() -> None:
         print('',file=sys.stderr)
         print('Error:',file=sys.stderr)
         print('',file=sys.stderr)
-        print('{e}'.format(e=e),file=sys.stderr)
+        print('{RED}{e}{RESET}'.format(e=e, RED=STDOUT_COLOR_RED, RESET=STDOUT_COLOR_RESET), file=sys.stderr)
         print('',file=sys.stderr)
         exit(1)
 

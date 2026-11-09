@@ -181,6 +181,26 @@ def test_write_results_reportfile_stats_columns(tmp_path):
     assert '"Weight_Report_DE",' in lines[1]
 
 
+def test_write_results_returns_row_count(tmp_path):
+    out = tmp_path / "out.csv"
+    results = [_make_result(wgt_filter="F", summary_table=[])]
+    config = {"input_filename": str(tmp_path / "x.htm"), "options": {}}
+    assert rws.write_results(str(out), results, config) == 1
+    assert rws.write_results(str(out), [], config) == 0
+
+
+def test_write_results_append_empty_results_writes_nothing(tmp_path):
+    out = tmp_path / "out.csv"
+    results = [_make_result(wgt_filter="F", summary_table=[])]
+    config = {"input_filename": str(tmp_path / "x.htm"), "options": {"out_append": True}}
+    rws.write_results(str(out), results, config)
+    before = out.read_text(encoding="utf-8")
+    # Appending zero rows to an existing non-empty CSV must not touch it, so a
+    # caller can truthfully report "nothing written".
+    assert rws.write_results(str(out), [], config) == 0
+    assert out.read_text(encoding="utf-8") == before
+
+
 # ---------------------------------------------------------------------------
 # read_html + parse_log integration
 # ---------------------------------------------------------------------------

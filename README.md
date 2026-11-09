@@ -79,11 +79,12 @@ in a release the `.bat` and `.py` sit side by side, so `SCRIPT_PATH` is just
 `run_wgt_summary.py`:
 
 - `run_wgt_summary_single.bat` — process a single report (`REPORT_FILE`).
-- `run_wgt_summary_multi.bat` — append several reports, listed explicitly.
+- `run_wgt_summary_multi.bat` — append several reports, listed explicitly, into
+  `REPORT_DIR\OUTPUT_FILENAME`.
 - `run_wgt_summary_scan.bat` — scan `REPORT_DIR` for every `Weight_*.htm` and
-  append them into one CSV (`OUTPUT_FILENAME`). Its `RECENT_HOURS` cutoff lets
-  you process only files edited within the last N hours; leave it blank to
-  process all files.
+  append them into one CSV (`REPORT_DIR\OUTPUT_FILENAME`). Its `RECENT_HOURS`
+  cutoff lets you process only files edited within the last N hours; leave it
+  blank to process all files.
 
 ## Build (release folder)
 

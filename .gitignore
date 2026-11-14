@@ -211,3 +211,6 @@ Weight_*.htm*
 
 # Real / sensitive test data (never commit)
 tests-real-sensitive-data/
+
+# Provisional planning notes (e.g. .roadmap-reorder-arguments.md)
+.roadmap-*

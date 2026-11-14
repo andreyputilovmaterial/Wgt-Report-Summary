@@ -1,8 +1,6 @@
 # Commit messages
 
-These guidelines apply **only when the user explicitly asks you to commit**.
-They describe how to write a commit message; they are not a prompt to commit on
-every message. Do not create a commit unless the user has asked for one.
+These rules only specify a style guide for commit message wording; they are not an encouragement to make commits.
 
 - Keep the first line (subject) short, clear, and informative, emphasizing the intent of the change rather than merely describing implementation details.
 - Start the subject with the affected component, feature, or location when applicable, so the scope of the change is immediately clear.
